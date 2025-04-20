@@ -10,6 +10,8 @@ import anthropic
 from dotenv import load_dotenv
 import glob
 from datetime import datetime
+import sys
+import unicodedata
 
 LOG_DIR = "logs"
 RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -32,7 +34,15 @@ def log_info(message):
 def extract_frontmatter(md_text):
     m = re.match(r"^---\n(.*?)\n---\n(.*)", md_text, re.DOTALL)
     if m:
-        return yaml.safe_load(m.group(1)), m.group(2)
+        try:
+            frontmatter_clean = remove_control_chars(m.group(1))
+            meta = yaml.safe_load(frontmatter_clean)
+            if not isinstance(meta, dict):
+                meta = {}
+        except Exception as e:
+            log_error("<frontmatter>", f"YAML parse error: {e}")
+            meta = {}
+        return meta, m.group(2)
     return {}, md_text
 
 # frontmatter再構築
@@ -74,6 +84,10 @@ def extract_tags_from_claude_output(output):
     en_tags = [t.strip() for t in en.group(1).split(",")] if en else []
     return jp_tags[:10] + en_tags[:10]
 
+# 制御文字除去関数
+def remove_control_chars(s):
+    return ''.join(c for c in s if unicodedata.category(c)[0] != 'C' or c in '\n\t')
+
 def get_tags_from_frontmatter(md_path):
     with open(md_path, encoding="utf-8") as f:
         lines = []
@@ -88,38 +102,38 @@ def get_tags_from_frontmatter(md_path):
             if in_frontmatter:
                 lines.append(line)
         if lines:
-            meta = yaml.safe_load("".join(lines))
-            return set(meta.get("tags", []))
+            try:
+                meta = yaml.safe_load("".join(lines))
+                if not isinstance(meta, dict):
+                    return set()
+                return set(meta.get("tags", []) or [])
+            except Exception as e:
+                log_error(md_path, f"YAML parse error: {e}")
+                return set()
     return set()
 
 # タグ付け本体
 def auto_tag_markdown(md_path):
-    # 'タグなし'ディレクトリ配下はスキップ
     if "タグなし" in md_path:
         log_info(f"Skip: {md_path} (in タグなし dir)")
         return
-    # frontmatterだけ先に読んで既存タグ判定
     existing_tags = get_tags_from_frontmatter(md_path)
     if any(tag.lower() != "clippings" for tag in existing_tags if tag.strip()):
         log_info(f"Skip: {md_path} (already tagged)")
         return
-    # ここで初めて全文読む
     with open(md_path, encoding="utf-8") as f:
         md_text = f.read()
+    md_text = remove_control_chars(md_text)
     meta, body = extract_frontmatter(md_text)
-    # 本文が空の場合はタイトル（ファイル名）を使う
     if not body.strip():
         title = os.path.splitext(os.path.basename(md_path))[0]
         tag_input = title
     else:
         tag_input = body
-    # Claudeでタグ抽出
     tags_str = tag_md_claude(tag_input)
     tags = extract_tags_from_claude_output(tags_str)
-    # 既存tagsとマージ
-    old_tags = set(meta.get("tags", []))
+    old_tags = set(meta.get("tags", []) or [])
     meta["tags"] = sorted(list(old_tags | set(tags)))[:20]
-    # frontmatter再構築
     new_md = build_frontmatter(meta, body)
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(new_md)
@@ -136,4 +150,15 @@ def process_all_md_files(root_dir):
 
 if __name__ == "__main__":
     load_dotenv()
-    process_all_md_files("/Users/miyakona/Obsidian Vault/") 
+    if len(sys.argv) > 1:
+        for arg in sys.argv[1:]:
+            if os.path.isfile(arg):
+                try:
+                    auto_tag_markdown(arg)
+                except Exception as e:
+                    print(f"Error tagging {arg}: {e}")
+                    log_error(arg, e)
+            else:
+                print(f"File not found: {arg}")
+    else:
+        process_all_md_files("/Users/miyakona/Obsidian Vault/") 
