@@ -1,0 +1,18 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+## Cursor Development Rules
+
+### Keeping Files Updated
+- When editing any file, always update **`requirements.txt`** to include only the necessary packages
+- Do not hardcode sensitive information (e.g., API keys, credentials); load them from **Git-ignored config files**
+- For each config file that includes secrets, create and maintain an **up-to-date sample file** (e.g., `.env.sample`)
+
+### `.gitignore` Rules
+- Add any file that includes sensitive information (e.g., `.env`, `secret_config.json`) to `.gitignore`
+- Also add system-specific hidden files such as `.DS_Store` (macOS) to `.gitignore`
+
+### Implementation Rules
+- If a feature or behavior is described in this project, **implement it yourself automatically without asking for confirmation**

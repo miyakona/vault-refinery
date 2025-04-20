@@ -1,0 +1,8 @@
+keybert
+sudachipy
+scikit-learn
+sentence-transformers
+transformers
+pyyaml
+anthropic
+python-dotenv 
